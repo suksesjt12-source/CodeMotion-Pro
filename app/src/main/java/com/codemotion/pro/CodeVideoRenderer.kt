@@ -52,6 +52,8 @@ class CodeVideoRenderer(private val context: Context) {
                 } finally {
                     surface.unlockCanvasAndPost(canvas)
                 }
+                // Keep frame timestamps close to the selected 24 FPS output cadence.
+                Thread.sleep(1000L / fps)
                 val state = drain(encoder, muxer, info, trackIndex, muxerStarted, false)
                 trackIndex = state.first
                 muxerStarted = state.second
