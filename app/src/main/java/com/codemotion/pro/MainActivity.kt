@@ -23,6 +23,8 @@ class MainActivity : Activity() {
     private var language = "Kotlin"
     private var resolution = "720p"
     private var isIndonesian = true
+    private lateinit var languageSpinner: Spinner
+    private lateinit var sizeSpinner: Spinner
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,8 +48,14 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         val localeButton = Button(this).apply { text = if (isIndonesian) "ID" else "EN" }
         localeButton.setOnClickListener {
+            val draft = editor.text.toString()
+            val selectedLanguage = language
+            val selectedResolution = resolution
             isIndonesian = !isIndonesian
             buildInterface()
+            editor.setText(draft)
+            languageSpinner.setSelection(listOf("Kotlin","Java","Python","JavaScript","HTML","C++","JSON").indexOf(selectedLanguage).coerceAtLeast(0))
+            sizeSpinner.setSelection(if (selectedResolution == "1080p") 1 else 0)
         }
         header.addView(localeButton)
         root.addView(header)
@@ -57,20 +65,20 @@ class MainActivity : Activity() {
             setPadding(0, 4, 0, 12)
         })
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val langs = Spinner(this)
-        langs.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("Kotlin","Java","Python","JavaScript","HTML","C++","JSON"))
-        langs.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+        languageSpinner = Spinner(this)
+        languageSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("Kotlin","Java","Python","JavaScript","HTML","C++","JSON"))
+        languageSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { language = langs.selectedItem.toString() }
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { language = languageSpinner.selectedItem.toString() }
         }
-        val sizes = Spinner(this)
-        sizes.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("720p","1080p"))
-        sizes.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+        sizeSpinner = Spinner(this)
+        sizeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, listOf("720p","1080p"))
+        sizeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { resolution = sizes.selectedItem.toString() }
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) { resolution = sizeSpinner.selectedItem.toString() }
         }
-        controls.addView(langs, LinearLayout.LayoutParams(0, 52, 1f))
-        controls.addView(sizes, LinearLayout.LayoutParams(0, 52, 1f))
+        controls.addView(languageSpinner, LinearLayout.LayoutParams(0, 52, 1f))
+        controls.addView(sizeSpinner, LinearLayout.LayoutParams(0, 52, 1f))
         root.addView(controls)
         editor = EditText(this).apply {
             setText("fun main() {\n    println(\"Hello, CodeMotion!\")\n}")
