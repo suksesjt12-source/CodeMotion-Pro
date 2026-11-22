@@ -15,7 +15,7 @@ class CodeVideoRenderer(private val context: Context) {
         val width = if (size == "1080p") 1920 else 1280
         val height = if (size == "1080p") 1080 else 720
         val fps = 24
-        val frames = fps * 8
+        val frameCount = fps * 8
         val output = File(context.getExternalFilesDir(null), "CodeMotion-" + System.currentTimeMillis() + ".mp4")
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
@@ -28,52 +28,41 @@ class CodeVideoRenderer(private val context: Context) {
         val surface = encoder.createInputSurface()
         val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         encoder.start()
-        var track = -1
+        var trackIndex = -1
         var muxerStarted = false
         val info = MediaCodec.BufferInfo()
         try {
             val codePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(225, 232, 242); textSize = 30f; typeface = android.graphics.Typeface.MONOSPACE }
             val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(90, 180, 255); textSize = 25f; typeface = android.graphics.Typeface.DEFAULT_BOLD }
             val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(90, 105, 125); textSize = 23f; typeface = android.graphics.Typeface.MONOSPACE }
-            for (frame in 0 until frames) {
+            val panelPaint = Paint().apply { color = Color.rgb(30, 38, 51) }
+            for (frame in 0 until frameCount) {
                 val canvas: Canvas = surface.lockCanvas(null)
                 try {
                     canvas.drawColor(Color.rgb(13, 17, 23))
-                    val panel = Paint().apply { color = Color.rgb(30, 38, 51) }
-                    canvas.drawRoundRect(40f, 40f, (width-40).toFloat(), (height-40).toFloat(), 20f, 20f, panel)
+                    canvas.drawRoundRect(40f, 40f, (width - 40).toFloat(), (height - 40).toFloat(), 20f, 20f, panelPaint)
                     canvas.drawText("CodeMotion Pro  /  " + language, 75f, 95f, titlePaint)
-                    val visible = ((code.length.coerceAtLeast(1).toLong() * (frame + 1)) / frames).toInt().coerceAtLeast(1)
-                    code.take(visible).split("\n").take(((height-180)/40).coerceAtLeast(1)).forEachIndexed { index, line ->
+                    val visible = ((code.length.coerceAtLeast(1).toLong() * (frame + 1)) / frameCount).toInt().coerceAtLeast(1)
+                    code.take(visible).split("\\n").take(((height - 180) / 40).coerceAtLeast(1)).forEachIndexed { index, line ->
                         val y = 165f + index * 40f
                         canvas.drawText((index + 1).toString().padStart(2, '0'), 75f, y, linePaint)
                         canvas.drawText(line.take(100), 135f, y, codePaint)
                     }
-                    canvas.drawText("Generated offline  •  " + size, 75f, (height-75).toFloat(), titlePaint)
-                } finally { surface.unlockCanvasAndPost(canvas) }
-                drain(encoder, muxer, info, false) { newTrack ->
-                    track = newTrack
-                    if (!muxerStarted) { muxer.start(); muxerStarted = true }
+                    canvas.drawText("Generated offline  •  " + size, 75f, (height - 75).toFloat(), titlePaint)
+                } finally {
+                    surface.unlockCanvasAndPost(canvas)
                 }
+                val state = drain(encoder, muxer, info, trackIndex, muxerStarted, false)
+                trackIndex = state.first
+                muxerStarted = state.second
             }
             encoder.signalEndOfInputStream()
-            var done = false
-            while (!done) {
-                val index = encoder.dequeueOutputBuffer(info, 10_000)
-                when {
-                    index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                        track = muxer.addTrack(encoder.outputFormat)
-                        muxer.start(); muxerStarted = true
-                    }
-                    index >= 0 -> {
-                        val buffer = encoder.getOutputBuffer(index)!!
-                        if (info.size > 0 && muxerStarted) {
-                            buffer.position(info.offset); buffer.limit(info.offset + info.size)
-                            muxer.writeSampleData(track, buffer, info)
-                        }
-                        done = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                        encoder.releaseOutputBuffer(index, false)
-                    }
-                }
+            var finished = false
+            while (!finished) {
+                val state = drain(encoder, muxer, info, trackIndex, muxerStarted, true)
+                trackIndex = state.first
+                muxerStarted = state.second
+                finished = state.third
             }
         } finally {
             try { encoder.stop() } catch (_: Exception) {}
@@ -85,22 +74,41 @@ class CodeVideoRenderer(private val context: Context) {
         return output
     }
 
-    private fun drain(encoder: MediaCodec, muxer: MediaMuxer, info: MediaCodec.BufferInfo, end: Boolean, onFormat: (Int) -> Unit) {
+    private fun drain(
+        encoder: MediaCodec,
+        muxer: MediaMuxer,
+        info: MediaCodec.BufferInfo,
+        initialTrack: Int,
+        initiallyStarted: Boolean,
+        waitForEnd: Boolean
+    ): Triple<Int, Boolean, Boolean> {
+        var track = initialTrack
+        var started = initiallyStarted
+        var eos = false
         while (true) {
-            val index = encoder.dequeueOutputBuffer(info, 0)
+            val index = encoder.dequeueOutputBuffer(info, if (waitForEnd) 10_000 else 0)
             when {
-                index == MediaCodec.INFO_TRY_AGAIN_LATER -> return
-                index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> onFormat(muxer.addTrack(encoder.outputFormat))
+                index == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                    if (!waitForEnd) return Triple(track, started, eos)
+                    continue
+                }
+                index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    track = muxer.addTrack(encoder.outputFormat)
+                    muxer.start()
+                    started = true
+                }
                 index >= 0 -> {
-                    val buffer = encoder.getOutputBuffer(index)!!
-                    if (info.size > 0 && muxerStartedSafe(muxer)) {
-                        buffer.position(info.offset); buffer.limit(info.offset + info.size)
-                        muxer.writeSampleData(0, buffer, info)
+                    val buffer = encoder.getOutputBuffer(index)
+                    if (buffer != null && info.size > 0 && started) {
+                        buffer.position(info.offset)
+                        buffer.limit(info.offset + info.size)
+                        muxer.writeSampleData(track, buffer, info)
                     }
+                    eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                     encoder.releaseOutputBuffer(index, false)
+                    if (eos) return Triple(track, started, true)
                 }
             }
         }
     }
-    private fun muxerStartedSafe(muxer: MediaMuxer) = false
 }
