@@ -43,7 +43,7 @@ class CodeVideoRenderer(private val context: Context) {
                     canvas.drawRoundRect(40f, 40f, (width - 40).toFloat(), (height - 40).toFloat(), 20f, 20f, panelPaint)
                     canvas.drawText("CodeMotion Pro  /  " + language, 75f, 95f, titlePaint)
                     val visible = ((code.length.coerceAtLeast(1).toLong() * (frame + 1)) / frameCount).toInt().coerceAtLeast(1)
-                    code.take(visible).split("\\n").take(((height - 180) / 40).coerceAtLeast(1)).forEachIndexed { index, line ->
+                    code.take(visible).split("\n").take(((height - 180) / 40).coerceAtLeast(1)).forEachIndexed { index, line ->
                         val y = 165f + index * 40f
                         canvas.drawText((index + 1).toString().padStart(2, '0'), 75f, y, linePaint)
                         canvas.drawText(line.take(100), 135f, y, codePaint)
